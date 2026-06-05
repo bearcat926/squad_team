@@ -1,9 +1,10 @@
 ﻿from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -13,17 +14,20 @@ from .models import EventPage, SquadEvent
 class EventStore:
     """SQLite-backed event stream with an NDJSON audit mirror."""
 
-    def __init__(self, squad_dir: Path):
+    def __init__(self, squad_dir: Path, conn: sqlite3.Connection | None = None):
         self.squad_dir = Path(squad_dir)
         self.squad_dir.mkdir(parents=True, exist_ok=True)
         self.db_path = self.squad_dir / "squad.db"
         self.ndjson_path = self.squad_dir / "events.ndjson"
-        self.conn = sqlite3.connect(self.db_path)
-        self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA journal_mode=WAL")
-        self.conn.execute("PRAGMA busy_timeout=5000")
-        self.conn.execute(
-            """
+        self._owns_connection = conn is None
+        if conn is not None:
+            self.conn = conn
+        else:
+            self.conn = sqlite3.connect(self.db_path)
+            self.conn.row_factory = sqlite3.Row
+            self.conn.execute("PRAGMA journal_mode=WAL")
+            self.conn.execute("PRAGMA busy_timeout=5000")
+        self.conn.execute("""
             CREATE TABLE IF NOT EXISTS squad_events (
                 id TEXT PRIMARY KEY,
                 run_id TEXT NOT NULL,
@@ -34,8 +38,7 @@ class EventStore:
                 created_at TEXT NOT NULL,
                 UNIQUE(run_id, sequence_number)
             )
-            """
-        )
+            """)
         self.conn.commit()
         self._record_consistency_warning_if_needed()
 
@@ -48,7 +51,7 @@ class EventStore:
             type=event_type,
             payload=payload,
             critical=critical,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
         payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         with self.conn:
@@ -87,13 +90,12 @@ class EventStore:
         return EventPage(events=events, next_cursor=next_cursor)
 
     def close(self) -> None:
-        self.conn.close()
+        if self._owns_connection:
+            self.conn.close()
 
     def __del__(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.close()
-        except Exception:
-            pass
 
     def _next_sequence(self, run_id: str) -> int:
         row = self.conn.execute(
@@ -133,12 +135,10 @@ class EventStore:
         self._rebuild_ndjson_from_sqlite()
 
     def _rebuild_ndjson_from_sqlite(self) -> None:
-        rows = self.conn.execute(
-            """
+        rows = self.conn.execute("""
             SELECT * FROM squad_events
             ORDER BY run_id ASC, sequence_number ASC
-            """
-        ).fetchall()
+            """).fetchall()
         with self.ndjson_path.open("w", encoding="utf-8") as handle:
             for row in rows:
                 event = self._row_to_event(row)
@@ -173,4 +173,3 @@ class EventStore:
             critical=bool(row["critical"]),
             created_at=row["created_at"],
         )
-

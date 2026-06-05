@@ -1,10 +1,14 @@
 ﻿from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
-from .agent_registry import AgentRegistry
+from .agent_registry import AgentProfile
 from .runtime import Runtime
+
+
+class _AgentRegistryLike(Protocol):
+    def get(self, agent_id: str) -> AgentProfile: ...
 
 
 @dataclass(frozen=True)
@@ -26,7 +30,7 @@ class AgentContextBundle:
 
 
 class AgentContextBuilder:
-    def __init__(self, runtime: Runtime, registry: AgentRegistry):
+    def __init__(self, runtime: Runtime, registry: _AgentRegistryLike):
         self.runtime = runtime
         self.registry = registry
 

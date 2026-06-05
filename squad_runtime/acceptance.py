@@ -8,7 +8,6 @@ from .agent_registry import AgentRegistry
 from .runtime import Runtime
 from .state import NodeStatus
 
-
 TERMINAL_NODE_STATUSES = {
     NodeStatus.PASS.value,
     NodeStatus.FAIL.value,
@@ -84,11 +83,17 @@ class AcceptanceReporter:
         output_path.write_text(self._render_markdown(payload), encoding="utf-8")
         return payload
 
-
     def _failure_agent_ids(self, run_id: str) -> set[str]:
         agent_ids: set[str] = set()
         for event in self.runtime.events.query(run_id, limit=100000).events:
-            if event.type in {"provider_blocked", "agent_timeout", "invalid_agent_result", "tool_permission_denied", "checkpoint_mismatch", "dependency_blocked"}:
+            if event.type in {
+                "provider_blocked",
+                "agent_timeout",
+                "invalid_agent_result",
+                "tool_permission_denied",
+                "checkpoint_mismatch",
+                "dependency_blocked",
+            }:
                 agent_id = event.payload.get("agentId")
                 if agent_id:
                     agent_ids.add(agent_id)

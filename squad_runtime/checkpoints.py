@@ -6,7 +6,6 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-
 EXCLUDED_DIRS = {".git", ".squad", "__pycache__", "node_modules", "dist", "build", ".pytest_cache", ".mypy_cache"}
 EXCLUDED_SUFFIXES = {".pyc", ".pyo", ".sqlite", ".db", ".wal", ".shm"}
 
@@ -42,7 +41,9 @@ class CheckpointManager:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
         manifest_path = checkpoint_dir / "manifest.json"
-        manifest_path.write_text(json.dumps({"mode": "snapshot", "checkpointId": checkpoint_id, "files": files}, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        manifest_path.write_text(
+            json.dumps({"mode": "snapshot", "checkpointId": checkpoint_id, "files": files}, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
+        )
         return Checkpoint(checkpoint_id=checkpoint_id, mode="snapshot", manifest_path=manifest_path)
 
     def _excluded(self, path: Path) -> bool:

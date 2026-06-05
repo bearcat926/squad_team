@@ -10,18 +10,21 @@ import typer
 from .acceptance import AcceptanceReporter
 from .adapter import AgentRuntimeAdapter
 from .agent_registry import AgentRegistry
+from .analytics import AnalyticsEngine
 from .api import create_app
 from .gate_engine import GateEngine
 from .lead_decision import LeadDecisionEngine
 from .providers import ProviderRegistry
 from .runtime import Runtime
 from .scheduler import Scheduler
-from .state import NodeStatus
 from .security import initialize_project, read_token, rotate_token
+from .services.backup_service import backup, restore
+from .state import NodeStatus
 
 app = typer.Typer(help="Local Squad Runtime CLI")
 token_app = typer.Typer(help="Token commands")
 agents_app = typer.Typer(help="Agent registry and provider commands")
+backup_app = typer.Typer(help="Backup and restore commands")
 
 
 def _squad_dir() -> Path:
@@ -76,10 +79,7 @@ def run_command(goal: str) -> None:
 @app.command()
 def status() -> None:
     rt = _runtime()
-    runs = [
-        {"id": run.id, "goal": run.goal, "status": run.status, "version": run.version}
-        for run in rt.list_runs()
-    ]
+    runs = [{"id": run.id, "goal": run.goal, "status": run.status, "version": run.version} for run in rt.list_runs()]
     _echo_json({"runs": runs})
 
 
@@ -88,7 +88,6 @@ def send(run_id: str, message: str) -> None:
     rt = _runtime()
     decision = LeadDecisionEngine(rt).apply_directive(run_id, message)
     _echo_json({"directiveId": decision.directive_id, "bypassAttempt": decision.bypass_attempt, "actions": decision.actions})
-
 
 
 @app.command("dispatch")
@@ -117,6 +116,7 @@ def dispatch(run_id: str, once: bool = typer.Option(False, "--once"), provider: 
             results.append({"taskNodeId": result.taskNodeId, "agentId": result.agentId, "status": result.status, "result": "agent_result"})
         GateEngine(rt).evaluate_all(run_id, trigger="system_dispatch_loop")
     _echo_json({"dispatched": len(results), "results": results})
+
 
 @app.command("eval-gates")
 def eval_gates(run_id: str, gate: str | None = typer.Option(None, "--gate")) -> None:
@@ -178,7 +178,6 @@ def export_log(run_id: str, output: Path = typer.Option(..., "--output"), final:
     _echo_json({"outputPath": str(output_path)})
 
 
-
 @app.command("acceptance-report")
 def acceptance_report(
     run_id: str,
@@ -204,6 +203,7 @@ def acceptance_report(
         },
     )
     _echo_json({"outputPath": str(output), "conclusion": payload["conclusion"], "risks": payload["risks"]})
+
 
 @app.command()
 def archive(run_id: str) -> None:
@@ -236,8 +236,38 @@ def token_show() -> None:
     _echo_json({"token": read_token(_squad_dir())})
 
 
+@backup_app.command("backup")
+def backup_cmd(
+    output: Path = typer.Option(..., "--output", help="Destination path for the .tar.gz archive"),
+    include_token: bool = typer.Option(False, "--include-token", help="Include the token file in the backup"),
+) -> None:
+    """Create a backup archive of the .squad directory."""
+    squad_dir = _squad_dir()
+    archive_path = backup(squad_dir, output, include_token=include_token)
+    _echo_json({"archivePath": str(archive_path), "includeToken": include_token})
+
+
+@backup_app.command("restore")
+def restore_cmd(
+    backup_path: Path = typer.Argument(..., help="Path to the .tar.gz backup file"),
+    target: Path = typer.Option(..., "--target", help="Directory to restore into"),
+) -> None:
+    """Restore a backup archive to a target directory."""
+    target_dir = restore(backup_path, target)
+    _echo_json({"targetDir": str(target_dir)})
+
+
+@app.command()
+def analytics(run_id: str | None = typer.Argument(None, help="Optional run ID to scope analytics")) -> None:
+    """Compute and display run analytics summary."""
+    rt = _runtime()
+    summary = AnalyticsEngine(rt).compute_summary(run_id)
+    _echo_json(summary)
+
+
 app.add_typer(agents_app, name="agents")
 app.add_typer(token_app, name="token")
+app.add_typer(backup_app, name="backup")
 
 
 if __name__ == "__main__":

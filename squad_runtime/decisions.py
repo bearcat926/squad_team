@@ -7,7 +7,6 @@ from .agent_registry import AgentRegistry
 from .runtime import Runtime
 from .state import NodeStatus
 
-
 ALLOWED_OPS = {"create_node", "update_node", "cancel_node", "mark_stale", "reroute"}
 ALLOWED_NODE_TYPES = {"lead", "prototype", "architecture", "design", "backend", "frontend", "test", "review", "gate", "release"}
 
