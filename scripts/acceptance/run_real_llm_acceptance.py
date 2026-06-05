@@ -51,7 +51,6 @@ NODE_TYPES = {
     "ui-designer": "design",
     "backend-architect": "backend",
     "frontend-developer": "frontend",
-    "backend-architect": "backend",
     "test-engineer": "test",
     "code-reviewer": "review",
     "reality-checker": "gate",
@@ -280,8 +279,15 @@ class AcceptanceScenarioRunner:
                     "providerTypeRequired": "real_llm",
                 },
                 "roleInstructions": {
-                    "test-engineer": "Evaluate QA evidence from runtime facts, coverage, source tree facts, and dependency summaries. Do not require shell access in this isolated LLM dispatch.",
-                    "code-reviewer": "Evaluate review readiness from runtime facts and dependency summaries. Do not require direct file reads in this isolated LLM dispatch.",
+                    "test-engineer": (
+                        "Evaluate QA evidence from runtime facts, coverage, source tree facts,"
+                        " and dependency summaries. Do not require shell access in this"
+                        " isolated LLM dispatch."
+                    ),
+                    "code-reviewer": (
+                        "Evaluate review readiness from runtime facts and dependency summaries."
+                        " Do not require direct file reads in this isolated LLM dispatch."
+                    ),
                     "reality-checker": "Evaluate release readiness from Test Gate, Code Review Gate, runtime facts, and dependency summaries.",
                     "git-workflow-master": "Only provide archive/release execution readiness after Release Gate pass.",
                 },

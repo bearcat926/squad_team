@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  squad-runtime:
+    build: .
+    ports:
+      - "8765:8765"
+    volumes:
+      - squad-data:/app/.squad
+    restart: unless-stopped
+
+volumes:
+  squad-data:

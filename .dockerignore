@@ -1,0 +1,16 @@
+.git
+__pycache__
+.squad
+*.pyc
+.pytest_cache
+.mypy_cache
+.coverage
+*.egg-info
+dist
+build
+.github
+.mypy_cache
+.ruff_cache
+venv
+.venv
+node_modules
