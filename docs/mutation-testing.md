@@ -1,52 +1,55 @@
 # Mutation Testing
 
-## Why
-
-Line coverage tells you which code was **executed**, not whether your tests
-would **catch a regression** if that code changed. Mutation testing modifies
-your source code (creates "mutants") and checks whether any test fails. If a
-mutant survives, your tests missed a behavioral change.
-
-## Setup
-
-`mutmut` is included in the dev dependencies:
-
-```bash
-pip install -e ".[dev]"
-```
-
-Configuration in `pyproject.toml`:
-
-```toml
-[tool.mutmut]
-paths_to_mutate = "squad_runtime/"
-tests_dir = "tests/"
-```
-
 ## Running
 
 ```bash
-mutmut run
+pip install -e ".[dev]"           # installs mutmut>=2.4,<3
+mutmut run --paths-to-mutate \
+  "squad_runtime/state.py" \
+  "squad_runtime/gate_engine.py" \
+  "squad_runtime/security/" \
+  "squad_runtime/services/" \
+  "squad_runtime/repositories/" \
+  "squad_runtime/providers/" \
+  "squad_runtime/event_store.py"
 mutmut results
 ```
 
-To see surviving mutants:
+## Environment Requirements
 
-```bash
-mutmut show <mutant_id>
-```
+- **Linux/macOS**: Runs directly (requires `fork()` support).
+- **Windows**: Requires WSL. mutmut depends on `fork()`, which native Windows Python does not support.
 
-## Interpreting Results
+## Target
 
-| Metric | Meaning |
-|--------|---------|
-| Killed | Test suite detected the mutation |
-| Survived | No test caught the change |
-| Timeout | Mutation caused infinite loop |
-| Suspicious | Mutation caused unusual behavior |
+- Mutation Score ≥ 60%
 
-**Target: mutation score >= 60%.**
+## Excluded Modules
 
-A low score on a module means tests exercise the code but don't assert its
-correctness tightly enough. Focus on state machine transitions, gate logic,
-and security paths.
+The following modules are excluded from mutation testing and not counted toward the score:
+
+| Module | Reason |
+|--------|--------|
+| `squad_runtime/api.py` | FastAPI route definitions, not business logic |
+| `squad_runtime/cli.py` | Typer CLI entry point |
+| `squad_runtime/web/` | Frontend static files |
+| `squad_runtime/models.py` | Pure dataclasses/Pydantic models |
+| `squad_runtime/mock_agents.py` | Test helpers |
+| `squad_runtime/__main__.py` | Module entry shim |
+| `scripts/` | Auxiliary scripts |
+
+## CI
+
+Runs every Monday UTC 06:00 on Ubuntu via `.github/workflows/mutation.yml`.
+Can also be triggered manually via `workflow_dispatch`.
+
+## mutmut 3.x Migration Plan
+
+Current version is pinned to `>=2.4,<3` to preserve the `paths_to_mutate` workflow.
+When migrating to mutmut 3.x, a dedicated PR should include:
+
+1. Migrate `paths_to_mutate` → `source_paths` in `pyproject.toml`
+2. Update CI workflow commands for any CLI changes
+3. Re-run mutation testing to re-establish baseline score
+4. Re-confirm the excluded module list
+5. Update this documentation with the new configuration

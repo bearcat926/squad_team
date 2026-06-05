@@ -19,6 +19,23 @@ python -m squad_runtime run "Build and validate a local MVP"
 python -m squad_runtime status
 ```
 
+## Test Suite
+
+```
+222+ tests passed | 0 failed | coverage ≥ 90%
+Ruff 0 errors | Black 0 reformats | MyPy 0 errors
+```
+
+## CI/CD
+
+| Workflow | Status |
+|----------|--------|
+| Lint (Ruff + Black + MyPy) | `.github/workflows/lint.yml` |
+| Test (pytest + coverage ≥ 90%) | `.github/workflows/test.yml` |
+| Security (pip-audit + bandit) | `.github/workflows/security.yml` |
+| Docker (build + health-check) | `.github/workflows/docker.yml` |
+| Mutation Testing (≥ 60%) | `.github/workflows/mutation.yml` |
+
 ## Real LLM Acceptance
 
 The acceptance runner executes serial real-LLM dispatches and writes:
@@ -52,8 +69,9 @@ python -m pytest tests -q --cov=squad_runtime --cov-report=term-missing
 
 Current verification:
 
-- Tests: `48 passed`
-- Coverage: `91%`
+- Tests: `222 passed, 3 skipped`
+- Coverage: `93%`
+- Ruff / Black / MyPy: clean
 - Full-team real LLM acceptance: `PASS`
 - Codebase memory graph: `indexed`, `3726 nodes`, `5337 edges`
 

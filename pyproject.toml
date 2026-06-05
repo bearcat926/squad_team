@@ -19,7 +19,7 @@ dev = [
   "pip-audit",
   "bandit",
   "httpx",
-  "mutmut",
+  "mutmut>=2.4,<3",
 ]
 
 [project.scripts]

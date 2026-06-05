@@ -1,0 +1,49 @@
+name: Docker
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate compose file
+        run: docker compose config --quiet
+
+      - name: Build Docker image
+        run: docker build -t squad-runtime:ci .
+
+      - name: Start container and health-check
+        run: |
+          docker compose up -d
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8765/api/health; then
+              echo "Health check passed after ${i} attempts"
+              exit 0
+            fi
+            docker compose logs --no-color squad-runtime || true
+            sleep 2
+          done
+          echo "::error::Health check failed after 30 attempts"
+          docker compose ps
+          docker compose logs --no-color squad-runtime
+          exit 1
+
+      - name: Verify non-root user
+        run: |
+          USER=$(docker compose exec -T squad-runtime whoami)
+          if [ "$USER" = "root" ]; then
+            echo "::error::Container running as root"
+            exit 1
+          fi
+          echo "Running as user: $USER"
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

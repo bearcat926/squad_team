@@ -26,6 +26,7 @@ def test_event_store_assigns_sequence_and_cursor(tmp_path: Path):
 
     ndjson_lines = (tmp_path / ".squad" / "events.ndjson").read_text(encoding="utf-8").splitlines()
     assert [json.loads(line)["sequenceNumber"] for line in ndjson_lines] == [1, 2]
+    event_store.close()
 
 
 def test_event_store_rebuilds_ndjson_once_when_mirror_drifts(tmp_path: Path):
@@ -33,6 +34,7 @@ def test_event_store_rebuilds_ndjson_once_when_mirror_drifts(tmp_path: Path):
     event_store = EventStore(squad_dir)
     event_store.append("run-1", "run_created", {"goal": "build"}, critical=True)
     (squad_dir / "events.ndjson").write_text("", encoding="utf-8")
+    event_store.close()
 
     recovered_store = EventStore(squad_dir)
 
@@ -43,10 +45,12 @@ def test_event_store_rebuilds_ndjson_once_when_mirror_drifts(tmp_path: Path):
     sqlite_event_count = len(recovered_store.query("run-1").events) + len(system_events)
     ndjson_line_count = len((squad_dir / "events.ndjson").read_text(encoding="utf-8").splitlines())
     assert ndjson_line_count == sqlite_event_count
+    recovered_store.close()
 
     reopened_store = EventStore(squad_dir)
 
     assert [event.type for event in reopened_store.query("system").events] == ["event_store_consistency_warning"]
+    reopened_store.close()
 
 
 def test_state_manager_enforces_terminal_stale_and_blocked_reason(tmp_path: Path):
@@ -73,6 +77,7 @@ def test_state_manager_enforces_terminal_stale_and_blocked_reason(tmp_path: Path
         blocked_reason_code="missing_test_pass",
     )
     assert runtime.get_node(blocked.id).blocked_reason_code == "missing_test_pass"
+    runtime.close()
 
 
 def test_late_agent_result_after_cancel_becomes_stale_advisory(tmp_path: Path):
@@ -102,6 +107,7 @@ def test_late_agent_result_after_cancel_becomes_stale_advisory(tmp_path: Path):
     assert outcome == "stale_advisory"
     assert runtime.get_node(node.id).status == NodeStatus.CANCELED
     assert runtime.events.query(run.id).events[-1].type == "stale_advisory"
+    runtime.close()
 
 
 def test_agent_result_validation_rejects_path_traversal(tmp_path: Path):
@@ -165,6 +171,8 @@ def test_gate_engine_filters_inactive_tests_and_blocks_release(tmp_path: Path):
     assert blocked_gates["code_review_gate"].status == "fail"
     assert blocked_gates["release_gate"].status == "blocked"
     assert blocked_gates["release_gate"].blocked_reason_code == "missing_review_pass"
+    runtime.close()
+    failing_runtime.close()
 
 
 def test_mock_agent_emits_progress_and_structured_result():

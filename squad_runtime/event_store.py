@@ -67,21 +67,26 @@ class EventStore:
         return event
 
     def query(self, run_id: str, cursor: int | None = None, limit: int = 100) -> EventPage:
-        params: list[Any] = [run_id]
-        where = "run_id = ?"
         if cursor is not None:
-            where += " AND sequence_number > ?"
-            params.append(cursor)
-        params.append(limit + 1)
-        rows = self.conn.execute(
-            f"""
-            SELECT * FROM squad_events
-            WHERE {where}
-            ORDER BY sequence_number ASC
-            LIMIT ?
-            """,
-            params,
-        ).fetchall()
+            rows = self.conn.execute(
+                """
+                SELECT * FROM squad_events
+                WHERE run_id = ? AND sequence_number > ?
+                ORDER BY sequence_number ASC
+                LIMIT ?
+                """,
+                (run_id, cursor, limit + 1),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """
+                SELECT * FROM squad_events
+                WHERE run_id = ?
+                ORDER BY sequence_number ASC
+                LIMIT ?
+                """,
+                (run_id, limit + 1),
+            ).fetchall()
         visible = rows[:limit]
         events = [self._row_to_event(row) for row in visible]
         next_cursor = None

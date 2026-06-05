@@ -1,13 +1,23 @@
-version: "3.8"
-
 services:
   squad-runtime:
     build: .
     ports:
-      - "8765:8765"
+      - "127.0.0.1:8765:8765"
     volumes:
       - squad-data:/app/.squad
     restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8765/api/health', timeout=3).read()",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   squad-data:

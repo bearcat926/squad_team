@@ -42,6 +42,7 @@ def test_expected_run_version_conflict_records_event(tmp_path: Path):
         raise AssertionError("version conflict did not fail")
 
     assert runtime.events.query(run.id).events[-1].type == "transition_conflict"
+    runtime.close()
 
 
 def test_restart_recovery_marks_running_nodes_unavailable(tmp_path: Path):
@@ -57,6 +58,7 @@ def test_restart_recovery_marks_running_nodes_unavailable(tmp_path: Path):
     assert [item.id for item in recovered] == [node.id]
     assert runtime.get_node(node.id).status == NodeStatus.AGENT_UNAVAILABLE
     assert runtime.events.query(run.id).events[-1].type == "server_restart_dispatch_recovery"
+    runtime.close()
 
 
 def test_scheduler_respects_global_and_per_agent_limits(tmp_path: Path):
@@ -74,6 +76,7 @@ def test_scheduler_respects_global_and_per_agent_limits(tmp_path: Path):
     candidates = scheduler.select_dispatch_candidates(run.id)
 
     assert [node.id for node in candidates] == [frontend_ready.id]
+    runtime.close()
 
 
 def test_api_requires_token_and_records_bypass_directive(tmp_path: Path):

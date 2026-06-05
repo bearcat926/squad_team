@@ -58,10 +58,27 @@ squad export-log <run_id> --output data.json --final
 ## Docker
 
 ```bash
+# Build and start (binds to 127.0.0.1 only)
 docker compose up -d
-curl http://127.0.0.1:8765/api/health
-docker compose down
+
+# Health check (Python urllib, no curl dependency)
+docker compose exec -T squad-runtime python -c \
+  "import urllib.request; print(urllib.request.urlopen('http://localhost:8765/api/health').read().decode())"
+
+# View logs
+docker compose logs -f squad-runtime
+
+# Stop and remove volumes
+docker compose down -v
 ```
+
+The container runs as non-root user `appuser`. The `.squad` directory is stored in a named Docker volume `squad-data`.
+
+### Notes
+
+- Port 8765 is bound to `127.0.0.1` only (not exposed to external networks).
+- The healthcheck uses Python `urllib` because the `python:3.11-slim` base image does not include `curl`.
+- Token is **not** baked into the image. Mount or set via environment at runtime.
 
 ## Common Issues
 

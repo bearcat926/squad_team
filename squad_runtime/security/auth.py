@@ -1,23 +1,12 @@
-"""API authentication enforcement."""
+"""API authentication compatibility module.
+
+The canonical token_matches implementation lives in security.__init__.
+This module re-exports for backward compatibility and provides a
+documented entry point for future auth extensions.
+"""
 
 from __future__ import annotations
 
-import secrets
-from pathlib import Path
+from . import token_matches  # noqa: F401 — re-export
 
-from ..security import read_token
-
-
-def token_matches(squad_dir: Path, provided: str | None) -> bool:
-    """Check whether the provided token matches the stored token.
-
-    Returns False if no token is provided or if the token file does not exist.
-    Uses constant-time comparison to prevent timing attacks.
-    """
-    if not provided:
-        return False
-    try:
-        expected = read_token(squad_dir)
-    except FileNotFoundError:
-        return False
-    return secrets.compare_digest(expected, provided)
+__all__ = ["token_matches"]
