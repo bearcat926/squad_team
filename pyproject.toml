@@ -9,9 +9,61 @@ dependencies = [
   "uvicorn",
 ]
 
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "pytest-cov",
+  "ruff",
+  "black",
+  "mypy",
+  "pip-audit",
+  "bandit",
+  "httpx",
+  "mutmut",
+]
+
 [project.scripts]
 squad = "squad_runtime.cli:app"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-p no:cacheprovider"
+markers = [
+  "unit",
+  "integration",
+  "api",
+  "security",
+  "acceptance",
+  "real_llm",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 160
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"squad_runtime/api.py" = ["B008"]
+"squad_runtime/cli.py" = ["B008"]
+"scripts/**/*.py" = ["E402"]
+
+[tool.black]
+line-length = 160
+target-version = ["py311"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true
+
+[tool.coverage.run]
+source = ["squad_runtime"]
+
+[tool.coverage.report]
+fail_under = 90
+
+[tool.mutmut]
+paths_to_mutate = "squad_runtime/"
+tests_dir = "tests/"
