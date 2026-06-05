@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Squad Runtime</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>Squad Runtime</h1>
+          <p>Read-only DAG, Gate, Agent, and Event monitor</p>
+        </div>
+        <div class="controls">
+          <select id="runSelect" aria-label="Run"></select>
+          <button id="refreshButton" type="button">Refresh</button>
+        </div>
+      </header>
+
+      <section class="directive-bar" aria-label="User directive">
+        <input id="tokenInput" type="password" placeholder="Token" autocomplete="off" />
+        <input id="directiveInput" type="text" placeholder="Send directive to Squad Lead" />
+        <button id="sendDirectiveButton" type="button">Send</button>
+      </section>
+
+      <section class="grid">
+        <section class="panel dag-panel">
+          <div class="panel-header">
+            <h2>DAG</h2>
+            <span id="runStatus" class="pill">No run</span>
+          </div>
+          <div id="dag" class="dag" aria-label="Read-only DAG"></div>
+        </section>
+
+        <aside class="panel side-panel">
+          <div class="panel-header">
+            <h2>Gates</h2>
+          </div>
+          <div id="gates" class="stack"></div>
+        </aside>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Node Detail</h2>
+          </div>
+          <pre id="nodeDetail" class="detail">Select a node.</pre>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Events</h2>
+          </div>
+          <ol id="events" class="events"></ol>
+        </section>
+      </section>
+    </main>
+    <script src="/static/app.js" type="module"></script>
+  </body>
+</html>

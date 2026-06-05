@@ -1,0 +1,18 @@
+.coverage
+.pytest_cache/
+__pycache__/
+*.py[cod]
+
+# Local Squad Runtime state. Keep generated reports at the repo root instead.
+.squad/token
+.squad/squad.db
+.squad/events.ndjson
+.squad/artifacts/
+.squad/checkpoints/
+.squad/runs/
+
+# Local editor / OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,17 @@
+[project]
+name = "squad-runtime"
+version = "0.1.0"
+description = "Local single-user Squad Runtime MVP"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi",
+  "typer",
+  "uvicorn",
+]
+
+[project.scripts]
+squad = "squad_runtime.cli:app"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
