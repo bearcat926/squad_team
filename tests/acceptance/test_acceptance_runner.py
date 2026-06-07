@@ -59,6 +59,49 @@ class VerifiedPassProvider(FakeCliProvider):
         return result
 
 
+class RateLimitedThenPassProvider(VerifiedPassProvider):
+    def __init__(self) -> None:
+        self.attempts: dict[str, int] = {}
+
+    def execute(self, runtime: Runtime, node, profile, synthetic: bool = False, provider_fallback_triggered: bool = False, fallback_reason: str | None = None):
+        attempts = self.attempts.get(node.id, 0) + 1
+        self.attempts[node.id] = attempts
+        if attempts == 1:
+            current = runtime.get_node(node.id)
+            if current.status == NodeStatus.READY:
+                runtime.transition_node(current.id, NodeStatus.READY, NodeStatus.RUNNING, "rate limited provider dispatch")
+            runtime.transition_node(node.id, NodeStatus.RUNNING, NodeStatus.AGENT_UNAVAILABLE, "provider rate limited")
+            payload = {
+                "nodeId": node.id,
+                "agentId": profile.agent_id,
+                "provider": "claude_cli",
+                "statusCode": 429,
+                "retryAfterSeconds": 0,
+            }
+            runtime.events.append(node.run_id, "provider_rate_limited", payload, critical=True)
+            runtime.events.append(node.run_id, "provider_blocked", {**payload, "detail": "429"}, critical=True)
+            return None
+        return super().execute(runtime, node, profile, synthetic, provider_fallback_triggered, fallback_reason)
+
+
+class AlwaysRateLimitedProvider(RateLimitedThenPassProvider):
+    def execute(self, runtime: Runtime, node, profile, synthetic: bool = False, provider_fallback_triggered: bool = False, fallback_reason: str | None = None):
+        current = runtime.get_node(node.id)
+        if current.status == NodeStatus.READY:
+            runtime.transition_node(current.id, NodeStatus.READY, NodeStatus.RUNNING, "rate limited provider dispatch")
+        runtime.transition_node(node.id, NodeStatus.RUNNING, NodeStatus.AGENT_UNAVAILABLE, "provider rate limited")
+        payload = {
+            "nodeId": node.id,
+            "agentId": profile.agent_id,
+            "provider": "claude_cli",
+            "statusCode": 429,
+            "retryAfterSeconds": 0,
+        }
+        runtime.events.append(node.run_id, "provider_rate_limited", payload, critical=True)
+        runtime.events.append(node.run_id, "provider_blocked", {**payload, "detail": "429"}, critical=True)
+        return None
+
+
 def _codebase_memory_ok() -> dict:
     return {
         "status": "indexed",
@@ -152,6 +195,53 @@ def test_required_downstream_node_is_dependency_blocked_after_upstream_failure(t
     assert test_node.blocked_reason_code == "gate_dependency_failed"
     assert "dependency_blocked" in event_types
     assert DispatchOutcome.DEPENDENCY_BLOCKED.value in outcomes
+
+
+def test_runner_retries_provider_rate_limited_node_once_and_records_success(tmp_path: Path):
+    runtime = Runtime.create(tmp_path / ".squad")
+    _write_coverage_baseline(runtime)
+    provider = RateLimitedThenPassProvider()
+    runner = AcceptanceScenarioRunner(
+        runtime=runtime,
+        registry=AgentRegistry.default(),
+        providers=ProviderRegistry({"claude_cli": provider}),
+        provider_name="claude_cli",
+        acceptance_root=tmp_path,
+        coverage_percent=90.0,
+        codebase_memory=_codebase_memory_ok(),
+    )
+
+    result = runner.run_minimal()
+
+    lead_node = next(node for node in runtime.list_nodes(result.run_id) if node.owner_agent_id == "squad-lead")
+    event_types = [event.type for event in runtime.events.query(result.run_id, limit=100000).events]
+    lead_record = next(record for record in result.dispatch_records if record["agentId"] == "squad-lead")
+    assert provider.attempts[lead_node.id] == 2
+    assert lead_record["outcome"] == DispatchOutcome.PASS.value
+    assert lead_record["rateLimitRetries"] == 1
+    assert "provider_rate_limited" in event_types
+    assert "provider_rate_limit_retry" in event_types
+
+
+def test_runner_fails_provider_rate_limited_node_after_retry_limit(tmp_path: Path):
+    runtime = Runtime.create(tmp_path / ".squad")
+    _write_coverage_baseline(runtime)
+    runner = AcceptanceScenarioRunner(
+        runtime=runtime,
+        registry=AgentRegistry.default(),
+        providers=ProviderRegistry({"claude_cli": AlwaysRateLimitedProvider()}),
+        provider_name="claude_cli",
+        acceptance_root=tmp_path,
+        coverage_percent=90.0,
+        codebase_memory=_codebase_memory_ok(),
+    )
+
+    result = runner.run_minimal()
+
+    lead_record = next(record for record in result.dispatch_records if record["agentId"] == "squad-lead")
+    assert lead_record["outcome"] == DispatchOutcome.UNAVAILABLE.value
+    assert lead_record["rateLimitRetries"] == 1
+    assert result.conclusion == "FAIL"
 
 
 def test_acceptance_report_fails_when_required_node_is_not_terminal(tmp_path: Path):

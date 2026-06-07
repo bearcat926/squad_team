@@ -88,6 +88,7 @@ class AcceptanceReporter:
         for event in self.runtime.events.query(run_id, limit=100000).events:
             if event.type in {
                 "provider_blocked",
+                "provider_rate_limited",
                 "agent_timeout",
                 "invalid_agent_result",
                 "tool_permission_denied",

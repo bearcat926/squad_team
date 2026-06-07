@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import threading
 from dataclasses import dataclass, field
@@ -169,11 +170,28 @@ class AcceptanceScenarioRunner:
     def _dispatch_node(self, node_id: str, agent_id: str) -> dict[str, Any]:
         node = self.runtime.get_node(node_id)
         self.runtime.transition_node(node.id, NodeStatus.TODO, NodeStatus.READY, "acceptance runner ready")
-        with self.dispatch_lock:
-            result = AgentRuntimeAdapter(self.runtime, self.registry, self.providers).dispatch_once(
-                node.id,
-                provider_override=self.provider_name,
+        retries = 0
+        retry_limit = self._rate_limit_retry_limit()
+        result = None
+        while True:
+            before_count = self._provider_rate_limited_count(node.id)
+            with self.dispatch_lock:
+                result = AgentRuntimeAdapter(self.runtime, self.registry, self.providers).dispatch_once(
+                    node.id,
+                    provider_override=self.provider_name,
+                )
+            updated = self.runtime.get_node(node.id)
+            after_count = self._provider_rate_limited_count(node.id)
+            if updated.status != NodeStatus.AGENT_UNAVAILABLE or after_count <= before_count or retries >= retry_limit:
+                break
+            retries += 1
+            self.runtime.events.append(
+                node.run_id,
+                "provider_rate_limit_retry",
+                {"nodeId": node.id, "agentId": agent_id, "provider": self.provider_name, "attempt": retries, "maxRetries": retry_limit},
+                critical=True,
             )
+            self.runtime.transition_node(node.id, NodeStatus.AGENT_UNAVAILABLE, NodeStatus.READY, "provider rate limit retry")
         updated = self.runtime.get_node(node.id)
         outcome = self._outcome_for(updated, result)
         return {
@@ -183,7 +201,25 @@ class AcceptanceScenarioRunner:
             "blockedReasonCode": updated.blocked_reason_code,
             "outcome": outcome.value,
             "hasAgentResult": result is not None,
+            "rateLimitRetries": retries,
         }
+
+    def _provider_rate_limited_count(self, node_id: str) -> int:
+        node = self.runtime.get_node(node_id)
+        return sum(
+            1
+            for event in self.runtime.events.query(node.run_id, limit=100000).events
+            if event.type == "provider_rate_limited" and event.payload.get("nodeId") == node_id
+        )
+
+    def _rate_limit_retry_limit(self) -> int:
+        provider = self.providers.get(self.provider_name)
+        if hasattr(provider, "rate_limit_retry_limit"):
+            return int(provider.rate_limit_retry_limit())
+        try:
+            return max(int(os.environ.get("SQUAD_CLAUDE_CLI_RATE_LIMIT_RETRIES", "1")), 0)
+        except ValueError:
+            return 1
 
     def _dependency_block(self, node, reason: str) -> dict[str, Any]:
         current = self.runtime.get_node(node.id)

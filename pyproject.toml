@@ -28,6 +28,7 @@ squad = "squad_runtime.cli:app"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-p no:cacheprovider"
+pythonpath = ["."]
 markers = [
   "unit",
   "integration",

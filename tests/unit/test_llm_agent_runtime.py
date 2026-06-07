@@ -83,6 +83,9 @@ def test_context_bundle_is_role_scoped_and_excludes_raw_outputs(tmp_path: Path):
     backend_node = runtime.create_node(run.id, "Define API", "backend", "backend-architect", checkpoint_id="ckp-ctx")
     node = runtime.create_node(run.id, "Build UI", "frontend", "frontend-developer", checkpoint_id="ckp-ctx")
     runtime.record_event(run.id, "verification_result", {"coveragePercent": 91.0, "testsDirectoryExists": True})
+    runtime.record_event(run.id, "artifact_produced", {"name": "api-contract", "path": "artifacts/api-contract.json", "type": "contract"})
+    runtime.record_event(run.id, "agent_operation", {"agentId": "backend-architect", "operation": "defined tenant scoped API"})
+    runtime.record_event(run.id, "data_flow", {"from": "api-contract", "to": "frontend", "fields": ["tenantId", "taskId"]})
     runtime.persist_agent_result(
         AgentResult(
             taskNodeId=backend_node.id,
@@ -107,6 +110,7 @@ def test_context_bundle_is_role_scoped_and_excludes_raw_outputs(tmp_path: Path):
     assert ".squad/*" in bundle.forbidden_paths
     assert bundle.runtime_facts[0]["type"] == "verification_result"
     assert bundle.runtime_facts[0]["payload"]["coveragePercent"] == 91.0
+    assert {fact["type"] for fact in bundle.runtime_facts} >= {"artifact_produced", "agent_operation", "data_flow"}
     assert bundle.dependency_summaries[0]["output_summary"] == "Backend contract ready"
     assert "raw_stdout" not in bundle.dependency_summaries[0]
 

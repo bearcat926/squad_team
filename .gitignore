@@ -15,6 +15,9 @@ __pycache__/
 # Test fixtures that should not be committed
 does_not_exist_for_contract_test/
 
+# Local smoke/acceptance artifacts
+artifacts/
+
 # Local editor / OS files
 .DS_Store
 Thumbs.db

@@ -236,6 +236,61 @@ def test_local_cli_provider_timeout_marks_agent_unavailable_and_keeps_artifacts(
     assert (dispatch_dirs[0] / "timeout.json").exists()
 
 
+def test_local_cli_provider_429_marks_provider_rate_limited_not_invalid(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("SQUAD_CLAUDE_CLI_MIN_INTERVAL_SEC", "0")
+    monkeypatch.setenv("SQUAD_CLAUDE_CLI_COOLDOWN_429_SEC", "0")
+    runtime = Runtime.create(tmp_path / ".squad")
+    run = runtime.create_run("rate limited")
+    node = runtime.create_node(run.id, "Build UI", "frontend", "frontend-developer")
+    runtime.transition_node(node.id, NodeStatus.TODO, NodeStatus.READY, "ready")
+    script = _write_script(
+        tmp_path / "provider_429.py",
+        """
+import sys
+print('API Error: Request rejected (429) · this may be a temporary capacity issue.', file=sys.stderr)
+raise SystemExit(1)
+""".strip(),
+    )
+    provider = LocalCliProvider("claude_cli", sys.executable, command_args=[str(script)], provider_type="real_llm", identity_verified=True)
+
+    outcome = provider.execute(runtime, node, AgentRegistry.default().get("frontend-developer"))
+
+    assert outcome is None
+    assert runtime.get_node(node.id).status == NodeStatus.AGENT_UNAVAILABLE
+    assert runtime.list_agent_results(run.id) == []
+    event_types = [event.type for event in runtime.events.query(run.id).events]
+    assert "provider_rate_limited" in event_types
+    assert "provider_blocked" in event_types
+    assert "invalid_agent_result" not in event_types
+
+
+def test_local_cli_provider_non_rate_limit_exit_still_blocks_invalid(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("SQUAD_CLAUDE_CLI_MIN_INTERVAL_SEC", "0")
+    runtime = Runtime.create(tmp_path / ".squad")
+    run = runtime.create_run("non rate exit")
+    node = runtime.create_node(run.id, "Build UI", "frontend", "frontend-developer")
+    runtime.transition_node(node.id, NodeStatus.TODO, NodeStatus.READY, "ready")
+    script = _write_script(
+        tmp_path / "provider_exit.py",
+        """
+import sys
+print('provider crashed for a local script reason', file=sys.stderr)
+raise SystemExit(1)
+""".strip(),
+    )
+    provider = LocalCliProvider("claude_cli", sys.executable, command_args=[str(script)], provider_type="real_llm", identity_verified=True)
+
+    outcome = provider.execute(runtime, node, AgentRegistry.default().get("frontend-developer"))
+
+    updated = runtime.get_node(node.id)
+    assert outcome is None
+    assert updated.status == NodeStatus.BLOCKED
+    assert updated.blocked_reason_code == "invalid_agent_result"
+    event_types = [event.type for event in runtime.events.query(run.id).events]
+    assert "invalid_agent_result" in event_types
+    assert "provider_rate_limited" not in event_types
+
+
 def test_local_cli_provider_unavailable_records_provider_blocked(tmp_path: Path):
     runtime = Runtime.create(tmp_path / ".squad")
     run = runtime.create_run("provider unavailable")

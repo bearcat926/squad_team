@@ -16,6 +16,7 @@ from ..state import NodeStatus
 from .base import ProviderHealth
 from .process_runner import ProcessRunner
 from .prompt_builder import PromptBuilder
+from .rate_limiter import ProviderRateLimiter
 from .result_parser import ResultParser
 from .workspace import Workspace
 
@@ -92,6 +93,7 @@ class LocalCliProvider:
         provider_type: str = "real_llm",
         identity_verified: bool = False,
         timeout_sec: float | None = None,
+        rate_limiter: ProviderRateLimiter | None = None,
     ):
         self.name = name
         self.executable = executable
@@ -99,6 +101,7 @@ class LocalCliProvider:
         self.provider_type = provider_type
         self.identity_verified = identity_verified
         self.timeout_sec = timeout_sec if timeout_sec is not None else float(os.environ.get("SQUAD_PROVIDER_TIMEOUT_SEC", "600"))
+        self.rate_limiter = rate_limiter or ProviderRateLimiter.from_env()
         self.extra_env: dict[str, str] = {}
         self._runner = ProcessRunner(executable, command_args, self.timeout_sec, self.extra_env)
         self._prompt_builder = PromptBuilder()
@@ -165,6 +168,21 @@ class LocalCliProvider:
             )
             return None
         provider_identity_verified = self.identity_verified or health.identity_verified
+        wait = self.rate_limiter.wait_before_dispatch(self.name)
+        if wait.waited_seconds > 0:
+            runtime.events.append(
+                node.run_id,
+                "provider_rate_limit_wait",
+                {
+                    "nodeId": node.id,
+                    "agentId": profile.agent_id,
+                    "dispatchId": dispatch_id,
+                    "provider": self.name,
+                    "waitSeconds": wait.waited_seconds,
+                    "reason": wait.reason,
+                },
+                critical=True,
+            )
         env_overrides = {
             "SQUAD_DISPATCH_DIR": str(workspace.dispatch_dir),
             "SQUAD_FINAL_RESULT_PATH": str(workspace.final_result_path),
@@ -185,6 +203,23 @@ class LocalCliProvider:
         workspace.write_stdout(completed.stdout or "")
         workspace.write_stderr(completed.stderr or "")
         if completed.returncode != 0:
+            output = "\n".join([completed.stdout or "", completed.stderr or ""])
+            rate_limit = self.rate_limiter.record_provider_error(self.name, output)
+            if rate_limit.is_rate_limited:
+                self._mark_unavailable(runtime, node, "provider rate limited")
+                rate_limit_payload = {
+                    "nodeId": node.id,
+                    "agentId": profile.agent_id,
+                    "dispatchId": dispatch_id,
+                    "provider": self.name,
+                    "statusCode": rate_limit.status_code,
+                    "cooldownSeconds": rate_limit.cooldown_seconds,
+                    "reason": rate_limit.reason,
+                    "exitCode": completed.returncode,
+                }
+                runtime.events.append(node.run_id, "provider_rate_limited", rate_limit_payload, critical=True)
+                runtime.events.append(node.run_id, "provider_blocked", {**rate_limit_payload, "detail": "provider rate limited"}, critical=True)
+                return None
             self._block_node(runtime, node, "invalid_agent_result", {"exitCode": completed.returncode})
             runtime.events.append(
                 node.run_id,
@@ -275,6 +310,9 @@ class LocalCliProvider:
         current = runtime.get_node(node.id)
         if current.status == NodeStatus.RUNNING:
             runtime.transition_node(node.id, NodeStatus.RUNNING, NodeStatus.AGENT_UNAVAILABLE, reason)
+
+    def rate_limit_retry_limit(self) -> int:
+        return self.rate_limiter.retry_limit(self.name)
 
 
 class ProviderRegistry:

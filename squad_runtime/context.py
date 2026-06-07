@@ -30,6 +30,17 @@ class AgentContextBundle:
 
 
 class AgentContextBuilder:
+    RUNTIME_FACT_EVENT_TYPES = {
+        "agent_message",
+        "agent_operation",
+        "artifact_produced",
+        "coverage_lane_update",
+        "data_flow",
+        "mvp_file_change",
+        "skill_usage",
+        "verification_result",
+    }
+
     def __init__(self, runtime: Runtime, registry: _AgentRegistryLike):
         self.runtime = runtime
         self.registry = registry
@@ -58,7 +69,7 @@ class AgentContextBuilder:
                 "payload": event.payload,
             }
             for event in self.runtime.events.query(node.run_id, limit=100000).events
-            if event.type in {"verification_result", "coverage_lane_update", "skill_usage"}
+            if event.type in self.RUNTIME_FACT_EVENT_TYPES
         ]
         return AgentContextBundle(
             agent_id=profile.agent_id,

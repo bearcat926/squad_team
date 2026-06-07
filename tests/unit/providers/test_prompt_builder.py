@@ -47,3 +47,11 @@ def test_prompt_builder_includes_json_shape():
     assert '"taskNodeId"' in prompt
     assert '"agentId"' in prompt
     assert '"workedAgainstCheckpoint"' in prompt
+
+
+def test_prompt_builder_rejects_acknowledgement_only_pass():
+    builder = PromptBuilder()
+    prompt = builder.build(FakeContext())
+    assert "Do not return status pass for acknowledgement-only output" in prompt
+    assert "ready to proceed" in prompt
+    assert "return status blocked" in prompt
