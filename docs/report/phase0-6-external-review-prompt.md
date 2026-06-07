@@ -1,18 +1,29 @@
 # Squad Runtime Phase 0-6 — 外部验收审核提示词
 
-> 将以下内容完整复制给你要使用的模型。压缩包附件：`phase0-6-evidence.zip`（22KB）
+> 将以下内容完整复制给你要使用的模型。
+> 附件 1：压缩包 `phase0-6-evidence.zip`（22KB，运行制品）
+> 附件 2：源码仓库 `https://github.com/bearcat926/squad_team` / branch `codex/phase-0-6-runtime`
 
 ---
 
 ## 审核任务
 
-你是一位资深软件质量专家。请对 Squad Runtime Phase 0-6 进行独立验收审核，基于压缩包中的证据材料，判断是否通过。
+你是一位资深软件质量专家。请对 Squad Runtime Phase 0-6 进行独立验收审核。你需要结合**运行制品（压缩包）**和**源码仓库（GitHub）**进行交叉验证，判断是否通过。
 
 ---
 
 ## 项目背景
 
 **项目**：Squad Runtime — 本地单用户多智能体 Runtime，Python/FastAPI/SQLite + Node/React 前端。
+**源码仓库**：`https://github.com/bearcat926/squad_team`，分支 `codex/phase-0-6-runtime`
+**关键源码文件**：
+- `squad_runtime/runtime.py` — Runtime Facade
+- `squad_runtime/adapter.py` — Agent dispatch 适配器
+- `squad_runtime/gate_engine.py` — 9 个 strict gate
+- `squad_runtime/providers/impl.py` — Provider 实现（含 rate_limiter）
+- `squad_runtime/replay.py` / `snapshot.py` / `schema_migration.py` — 可观测性新增模块
+- `squad_runtime/evidence_policy.py` / `squad_runtime/profile_registry.py` — 证据/配置规范
+- `scripts/phase6_real_project_runtime.py` — Phase 6 主脚本
 
 **Phase 0-6 范围**：从 MVP 到 9 个真实场景配置的全链路验证，包括：
 - 核心 Runtime（create_run / create_node / dispatch / gate_engine / analytics / export / archive）
@@ -58,12 +69,17 @@
 6. `archive-run-875b5cebfd4a.json` 是否可被 `json.loads()` 解析？
 7. `archive-manifest.json` 中列出的文件数与 actual files 是否匹配？
 
-### D. 风险和遗留
-8. 已有验收报告标记为 PASS_WITH_RISKS，列出了真实 provider 工具循环、完整事件 hash chain、Windows symlink 三个后续风险。你的评估：这些风险是否应该阻塞 release？为什么？
-9. 是否发现验收报告未提及的新问题？
+### D. 源码交叉验证
+8. 对比 `gate_engine.py` 中的 9 个 gate 与 `summary-phase6.json` 的 gateStates。源码中定义的 gate 是否都在运行结果中有 PASS/FAIL 状态？
+9. `scripts/phase6_real_project_runtime.py` 的 9 个 scenario 配置是否与 `summary-phase6.json` 的 scenarioProfiles 一一对应？
+10. 压缩包中 `archive-run-875b5cebfd4a.json` 的 events 是否与源码 `squad_runtime/runtime.py` 中 `archive_run()` 的输出结构一致？
 
-### E. 整体判断
-10. 综合以上，你的验收结论是什么？
+### E. 风险和遗留
+11. 已有验收报告标记为 PASS_WITH_RISKS，列出了真实 provider 工具循环、完整事件 hash chain、Windows symlink 三个后续风险。你的评估：这些风险是否应该阻塞 release？为什么？
+12. 是否发现验收报告未提及的新问题？
+
+### F. 整体判断
+13. 综合以上，你的验收结论是什么？
 
 ---
 
@@ -73,16 +89,19 @@
 # Phase 0-6 外部验收审核报告
 
 ## 一、数据完整性
-[逐问回答 1-2-3]
+[逐问 1-2-3]
 
 ## 二、质量门禁
-[逐问回答 4-5]
+[逐问 4-5]
 
 ## 三、归档完整性
-[逐问回答 6-7]
+[逐问 6-7]
 
-## 四、风险评估
-[逐问回答 8-9]
+## 四、源码交叉验证
+[逐问 8-9-10]
+
+## 五、风险评估
+[逐问 11-12]
 
 ## 五、最终判断
 - 结论: [PASS / PASS_WITH_RISKS / FAIL]
