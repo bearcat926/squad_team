@@ -1,0 +1,36 @@
+{
+  "fixtureKind": "baseline_observation",
+  "thresholdPolicy": "observation_not_global_threshold",
+  "sourceLog": "E:\\Project\\Multica小队\\archive\\2026-06-07-squad-runtime-real-run\\scenario-run\\artifacts\\dev-scenario\\FULL_DATA_LOG-dev.json",
+  "run": {
+    "id": "run-85631d7da7da",
+    "goal": "Build collaborative real-time task dashboard MVP with tenant-scoped RBAC and audit logging",
+    "schemaVersion": "v1",
+    "ruleVersion": "v1",
+    "agentContractVersion": "v1"
+  },
+  "provider": {
+    "providerUsed": "claude_cli",
+    "providerType": "real_llm",
+    "providerIdentityVerified": true,
+    "syntheticDependency": false,
+    "providerFallback": false
+  },
+  "observedCounts": {
+    "nodes": 10,
+    "gates": 4,
+    "agentResults": 10,
+    "events": 217,
+    "evidenceItems": 48,
+    "artifacts": 13,
+    "verificationResults": 4,
+    "skillUsage": 10,
+    "coverageLanes": 6
+  },
+  "gateStatus": {
+    "test_gate": "pass",
+    "code_review_gate": "pass",
+    "reality_checker_gate": "pass",
+    "release_gate": "pass"
+  }
+}

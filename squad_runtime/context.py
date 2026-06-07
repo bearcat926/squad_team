@@ -19,6 +19,8 @@ class AgentContextBundle:
     task_node_id: str
     task_goal: str
     checkpoint_id: str
+    base_snapshot_id: str
+    result_snapshot_id: str | None
     output_contract: str
     allowed_tools: tuple[str, ...]
     allowed_read_paths: tuple[str, ...]
@@ -78,6 +80,8 @@ class AgentContextBuilder:
             task_node_id=node.id,
             task_goal=node.title,
             checkpoint_id=node.checkpoint_id,
+            base_snapshot_id=node.checkpoint_id,
+            result_snapshot_id=None,
             # AgentRuntimeAdapter dispatches always return AgentResult. LeadDecisionChangeSet
             # remains a Lead planning contract, not a provider dispatch output contract.
             output_contract="AgentResult",

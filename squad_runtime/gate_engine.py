@@ -1,20 +1,28 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Literal
 
 from .models import GateDecision, TaskNode
 from .runtime import Runtime
 from .state import NodeStatus
 
 
+@dataclass(frozen=True)
+class GateEvidenceContext:
+    schema_version: str
+    mode: str
+    artifacts: list[dict[str, Any]]
+    verification_results: list[dict[str, Any]]
+    agent_results: list[dict[str, Any]]
+
+
 class GateEngine:
     def __init__(self, runtime: Runtime):
         self.runtime = runtime
 
-    def evaluate_all(self, run_id: str, trigger: str = "manual") -> dict[str, GateDecision]:
-        decisions: dict[str, GateDecision] = {}
-        decisions["test_gate"] = self.evaluate_test_gate(run_id)
-        decisions["code_review_gate"] = self.evaluate_code_review_gate(run_id)
-        decisions["reality_checker_gate"] = self.evaluate_reality_gate(run_id, decisions)
-        decisions["release_gate"] = self.evaluate_release_gate(run_id, decisions)
+    def evaluate_all(self, run_id: str, trigger: str = "manual", mode: Literal["legacy", "strict"] = "legacy") -> dict[str, GateDecision]:
+        decisions = self._evaluate_strict(run_id) if mode == "strict" else self._evaluate_legacy(run_id)
         for decision in decisions.values():
             self.runtime.upsert_gate_state(
                 run_id,
@@ -27,15 +35,39 @@ class GateEngine:
                 run_id,
                 "gate_decision",
                 {
+                    "schemaVersion": "gate-decision/v1",
                     "gateName": decision.gate_name,
                     "status": decision.status,
                     "reason": decision.reason,
                     "blockedReasonCode": decision.blocked_reason_code,
                     "trigger": trigger,
+                    "mode": mode,
                     "details": decision.details or {},
                 },
                 critical=True,
             )
+        return decisions
+
+    def _evaluate_legacy(self, run_id: str) -> dict[str, GateDecision]:
+        decisions: dict[str, GateDecision] = {}
+        decisions["test_gate"] = self.evaluate_test_gate(run_id)
+        decisions["code_review_gate"] = self.evaluate_code_review_gate(run_id)
+        decisions["reality_checker_gate"] = self.evaluate_reality_gate(run_id, decisions)
+        decisions["release_gate"] = self.evaluate_release_gate(run_id, decisions)
+        return decisions
+
+    def _evaluate_strict(self, run_id: str) -> dict[str, GateDecision]:
+        context = self._gate_evidence_context(run_id)
+        decisions: dict[str, GateDecision] = {}
+        decisions["test_gate"] = self._evaluate_strict_test_gate(context)
+        decisions["code_review_gate"] = self._evaluate_strict_code_review_gate(context)
+        decisions["provider_authenticity_gate"] = self._evaluate_provider_authenticity_gate(context)
+        decisions["evidence_authenticity_gate"] = self._evaluate_evidence_authenticity_gate(context)
+        decisions["coverage_gate"] = self._evaluate_coverage_gate(context)
+        decisions["chain_completeness_gate"] = self._evaluate_chain_completeness_gate(run_id)
+        decisions["boundary_gate"] = self._evaluate_boundary_gate(context)
+        decisions["reality_checker_gate"] = self.evaluate_reality_gate(run_id, decisions)
+        decisions["release_gate"] = self._evaluate_strict_release_gate(context, decisions)
         return decisions
 
     def evaluate_test_gate(self, run_id: str) -> GateDecision:
@@ -102,7 +134,7 @@ class GateEngine:
                 )
         return GateDecision("release_gate", "pass", "All prerequisite gates passed")
 
-    def _facts_for(self, run_id: str, agent_id: str) -> list[dict]:
+    def _facts_for(self, run_id: str, agent_id: str) -> list[dict[str, Any]]:
         return [result for result in self.runtime.list_agent_results(run_id) if result["agentId"] == agent_id and not result["synthetic"]]
 
     def _evaluate_test_gate_from_nodes(self, run_id: str) -> GateDecision:
@@ -153,3 +185,106 @@ class GateEngine:
     def _active_nodes(self, run_id: str, node_type: str) -> list[TaskNode]:
         inactive = {NodeStatus.STALE, NodeStatus.CANCELED}
         return [node for node in self.runtime.list_nodes(run_id) if node.type == node_type and node.status not in inactive and not node.replaced_by_node_id]
+
+    def _gate_evidence_context(self, run_id: str) -> GateEvidenceContext:
+        events = self.runtime.events.query(run_id, limit=100000).events
+        artifacts = [event.payload for event in events if event.type == "artifact_produced"]
+        verification_results = [event.payload for event in events if event.type == "verification_result"]
+        return GateEvidenceContext(
+            schema_version="gate-evidence-context/v1",
+            mode="strict",
+            artifacts=artifacts,
+            verification_results=verification_results,
+            agent_results=self.runtime.list_agent_results(run_id),
+        )
+
+    def _evaluate_strict_test_gate(self, context: GateEvidenceContext) -> GateDecision:
+        test_results = [result for result in context.agent_results if result["agentId"] == "test-engineer" and not result["synthetic"]]
+        if not any(result["status"] == "pass" for result in test_results):
+            return GateDecision("test_gate", "blocked", "Missing Test Engineer PASS fact", blocked_reason_code="missing_test_pass")
+        if not any(artifact.get("type") == "test" for artifact in context.artifacts):
+            return self._strict_fail("test_gate", "Missing test artifact", "EVIDENCE_MISSING")
+        if not any(item.get("kind") == "ui_smoke" and item.get("status") == "pass" for item in context.verification_results):
+            return self._strict_fail("test_gate", "Missing ui_smoke verification", "EVIDENCE_MISSING")
+        return GateDecision("test_gate", "pass", "Strict test evidence passed", details={"schemaVersion": context.schema_version})
+
+    def _evaluate_strict_code_review_gate(self, context: GateEvidenceContext) -> GateDecision:
+        review_results = [result for result in context.agent_results if result["agentId"] == "code-reviewer" and not result["synthetic"]]
+        if not any(result["status"] == "pass" for result in review_results):
+            return GateDecision("code_review_gate", "blocked", "Missing Code Reviewer PASS fact", blocked_reason_code="missing_review_pass")
+        if not any(artifact.get("type") in {"review", "review_fact", "review-artifact"} for artifact in context.artifacts):
+            return self._strict_fail("code_review_gate", "Missing Review Fact artifact", "EVIDENCE_MISSING")
+        return GateDecision("code_review_gate", "pass", "Strict review facts passed", details={"schemaVersion": context.schema_version})
+
+    def _evaluate_provider_authenticity_gate(self, context: GateEvidenceContext) -> GateDecision:
+        for result in context.agent_results:
+            if (
+                result["providerUsed"] != "claude_cli"
+                or result["providerType"] != "real_llm"
+                or not result["providerIdentityVerified"]
+                or result["providerFallbackTriggered"]
+                or result["synthetic"]
+            ):
+                return self._strict_fail("provider_authenticity_gate", "Provider authenticity failed", "PROVIDER_FAILURE")
+        return GateDecision("provider_authenticity_gate", "pass", "Provider authenticity passed", details={"schemaVersion": context.schema_version})
+
+    def _evaluate_evidence_authenticity_gate(self, context: GateEvidenceContext) -> GateDecision:
+        for artifact in context.artifacts:
+            if artifact.get("hashMatches") is False or artifact.get("snapshotHashMatches") is False:
+                return self._strict_fail("evidence_authenticity_gate", "Artifact or snapshot hash mismatch", "EVIDENCE_TAMPERED")
+        return GateDecision("evidence_authenticity_gate", "pass", "Evidence authenticity passed", details={"schemaVersion": context.schema_version})
+
+    def _evaluate_coverage_gate(self, context: GateEvidenceContext) -> GateDecision:
+        strengths = {"medium": 2, "high": 3}
+        for item in context.verification_results:
+            if item.get("kind") == "coverage" and item.get("status") == "pass" and strengths.get(str(item.get("evidenceStrength")), 0) >= 2:
+                return GateDecision("coverage_gate", "pass", "Coverage evidence quality passed", details={"schemaVersion": context.schema_version})
+        return self._strict_fail("coverage_gate", "Missing coverage extractor fact", "EVIDENCE_MISSING")
+
+    def _evaluate_chain_completeness_gate(self, run_id: str) -> GateDecision:
+        events = self.runtime.events.query(run_id, limit=100000).events
+        has_event_hash = any(event.type == "event_hash_chain_sealed" and event.payload.get("finalEventHash") for event in events)
+        has_chain_graph = any(event.type == "runtime_chain_graph_sealed" and event.payload.get("chainGraphHash") for event in events)
+        if not has_event_hash or not has_chain_graph:
+            return self._strict_fail("chain_completeness_gate", "Missing event hash chain or runtime chain graph", "EVIDENCE_MISSING")
+        return GateDecision("chain_completeness_gate", "pass", "Chain completeness passed")
+
+    def _evaluate_boundary_gate(self, context: GateEvidenceContext) -> GateDecision:
+        for artifact in context.artifacts:
+            path = str(artifact.get("path", ""))
+            parts = path.replace("\\", "/").split("/")
+            if path.startswith(("/", "\\")) or ".." in parts or ".squad" in parts:
+                return self._strict_fail("boundary_gate", "Artifact path violates workspace boundary", "SECURITY_VIOLATION")
+        return GateDecision("boundary_gate", "pass", "Boundary evidence passed", details={"schemaVersion": context.schema_version})
+
+    def _evaluate_strict_release_gate(self, context: GateEvidenceContext, decisions: dict[str, GateDecision]) -> GateDecision:
+        for gate_name, decision in decisions.items():
+            if gate_name == "release_gate":
+                continue
+            if decision.status != "pass":
+                return GateDecision(
+                    "release_gate",
+                    "blocked",
+                    f"{gate_name} not passed",
+                    blocked_reason_code=decision.blocked_reason_code or "gate_dependency_failed",
+                    details={"blockingGate": gate_name, "failureClass": (decision.details or {}).get("failureClass")},
+                )
+        if not any(artifact.get("type") == "release_archive" for artifact in context.artifacts):
+            return self._strict_fail("release_gate", "Missing release archive manifest", "EVIDENCE_MISSING")
+        return GateDecision("release_gate", "pass", "Strict release evidence passed")
+
+    @staticmethod
+    def _strict_fail(gate_name: str, reason: str, failure_class: str) -> GateDecision:
+        reason_code = {
+            "EVIDENCE_MISSING": "evidence_missing",
+            "EVIDENCE_TAMPERED": "evidence_tampered",
+            "PROVIDER_FAILURE": "provider_failure",
+            "SECURITY_VIOLATION": "security_violation",
+        }.get(failure_class, "gate_dependency_failed")
+        return GateDecision(
+            gate_name,
+            "fail",
+            reason,
+            blocked_reason_code=reason_code,
+            details={"failureClass": failure_class},
+        )

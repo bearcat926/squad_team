@@ -11,6 +11,8 @@ class PromptBuilder:
 
     def build(self, context: Any) -> str:
         """Build a prompt from an AgentContextBundle."""
+        base_snapshot_id = getattr(context, "base_snapshot_id", context.checkpoint_id)
+        result_snapshot_id = getattr(context, "result_snapshot_id", None)
         return (
             "You are the configured Squad Runtime agent. Return exactly one top-level JSON object matching AgentResult.\n"
             "Do not include Markdown fences, commentary, or multiple JSON objects.\n"
@@ -30,6 +32,8 @@ class PromptBuilder:
             f"Task Node ID: {context.task_node_id}\n"
             f"Task: {context.task_goal}\n"
             f"Checkpoint: {context.checkpoint_id}\n"
+            f"Base Snapshot ID: {base_snapshot_id}\n"
+            f"Result Snapshot ID: {result_snapshot_id or 'pending'}\n"
             "Runtime Output Contract: AgentResult\n"
             f"Forbidden paths: {', '.join(context.forbidden_paths)}\n"
             "Runtime facts available to this dispatch:\n"
@@ -50,6 +54,9 @@ class PromptBuilder:
             '  "nextActions": [{"action": "next action", "reason": "why"}],\n'
             '  "confidence": 0.0,\n'
             f'  "workedAgainstCheckpoint": "{context.checkpoint_id}",\n'
+            '  "schemaVersion": "agent-result/v1",\n'
+            f'  "baseSnapshotId": "{base_snapshot_id}",\n'
+            '  "resultSnapshotId": null,\n'
             '  "agentContractVersion": "v1"\n'
             "}\n"
         )

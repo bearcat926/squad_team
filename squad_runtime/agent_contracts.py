@@ -38,6 +38,13 @@ class AgentResult:
     confidence: float
     workedAgainstCheckpoint: str
     agentContractVersion: str
+    schemaVersion: str = "agent-result/v1"
+    baseSnapshotId: str | None = None
+    resultSnapshotId: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.baseSnapshotId is None:
+            object.__setattr__(self, "baseSnapshotId", self.workedAgainstCheckpoint)
 
 
 @dataclass(frozen=True)

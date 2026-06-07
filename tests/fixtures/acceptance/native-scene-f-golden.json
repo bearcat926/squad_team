@@ -1,0 +1,36 @@
+{
+  "fixtureKind": "baseline_observation",
+  "thresholdPolicy": "observation_not_global_threshold",
+  "sourceLog": "E:\\Project\\Multica小队\\archive\\2026-06-07-squad-runtime-real-run\\scenario-run\\artifacts\\native-scene-f\\FULL_DATA_LOG-scene-F.json",
+  "run": {
+    "id": "run-5e18712d0c6e",
+    "goal": "scene-F smoke test",
+    "schemaVersion": "v1",
+    "ruleVersion": "v1",
+    "agentContractVersion": "v1"
+  },
+  "provider": {
+    "providerUsed": "claude_cli",
+    "providerType": "real_llm",
+    "providerIdentityVerified": true,
+    "syntheticDependency": false,
+    "providerFallback": false
+  },
+  "observedCounts": {
+    "nodes": 10,
+    "gates": 4,
+    "agentResults": 10,
+    "events": 151,
+    "evidenceItems": 15,
+    "artifacts": 0,
+    "verificationResults": 0,
+    "skillUsage": 0,
+    "coverageLanes": 0
+  },
+  "gateStatus": {
+    "test_gate": "pass",
+    "code_review_gate": "pass",
+    "reality_checker_gate": "pass",
+    "release_gate": "pass"
+  }
+}

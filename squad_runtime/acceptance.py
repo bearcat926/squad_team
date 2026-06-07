@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any
 
 from .agent_registry import AgentRegistry
+from .evidence_policy import EvidencePolicy
+from .profile_registry import EvidenceScenarioType, ResolvedProfileLoader
 from .runtime import Runtime
 from .state import NodeStatus
 
@@ -32,6 +34,7 @@ class AcceptanceReporter:
         coverage_percent: float | None = None,
         codebase_memory: dict[str, Any] | None = None,
         required_agent_ids: list[str] | None = None,
+        scenario_type: str = "smoke",
     ) -> dict[str, Any]:
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -44,6 +47,10 @@ class AcceptanceReporter:
         coverage = self._evaluate_coverage(coverage_percent, risks)
         codebase = self._evaluate_codebase_memory(codebase_memory or {}, risks)
         required_agent_ids = required_agent_ids or [agent.agent_id for agent in AgentRegistry.default().list_agents()]
+        frozen_profile = ResolvedProfileLoader.default().freeze(EvidenceScenarioType(scenario_type))
+        evidence_gate = EvidencePolicy(frozen_profile).evaluate(self._collect_runtime_facts(run_id, results))
+        if evidence_gate.status != "pass":
+            risks.append("evidence_gate_failed")
         self._evaluate_required_node_terminality(run_id, set(required_agent_ids), risks)
         if any(result["synthetic"] for result in results):
             risks.append("synthetic_dependency_present")
@@ -78,6 +85,10 @@ class AcceptanceReporter:
             "coverage": coverage,
             "coverage_baseline_created": coverage["baseline_created"],
             "codebase_memory": codebase,
+            "evidence_gate": evidence_gate.to_dict(),
+            "resolved_profile_hash": frozen_profile.resolved_profile_hash,
+            "source_profiles": list(frozen_profile.source_profiles),
+            "failure_classification_summary": self._failure_classification_summary(evidence_gate.to_dict()),
             "risks": sorted(set(risks)),
         }
         output_path.write_text(self._render_markdown(payload), encoding="utf-8")
@@ -148,6 +159,53 @@ class AcceptanceReporter:
             }
             for result in results
         ]
+
+    def _collect_runtime_facts(self, run_id: str, results: list[dict[str, Any]]) -> dict[str, Any]:
+        events = self.runtime.events.query(run_id, limit=100000).events
+        return {
+            "agentResults": results,
+            "evidenceItems": self.runtime.list_evidence_items(run_id),
+            "artifacts": self._artifacts_with_existence(self.runtime.list_artifacts(run_id)),
+            "reviewFindings": self.runtime.list_review_findings(run_id),
+            "reviewArtifacts": [
+                event.payload
+                for event in events
+                if event.type == "artifact_produced" and event.payload.get("type") in {"review", "review_fact", "review-artifact"}
+            ],
+            "verificationResults": [event.payload for event in events if event.type == "verification_result"],
+            "coverageLanes": [event.payload for event in events if event.type == "coverage_lane_update"],
+            "skillUsage": [event.payload for event in events if event.type == "skill_usage"],
+            "eventHashChain": self._event_hash_chain_fact(events),
+        }
+
+    def _artifacts_with_existence(self, artifacts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        enriched: list[dict[str, Any]] = []
+        for artifact in artifacts:
+            item = dict(artifact)
+            path = Path(str(item.get("path", "")))
+            if path.is_absolute():
+                item["exists"] = path.exists()
+            else:
+                item["exists"] = (self.runtime.squad_dir.parent / path).exists() or (self.runtime.squad_dir / "artifacts" / path).exists()
+            enriched.append(item)
+        return enriched
+
+    @staticmethod
+    def _event_hash_chain_fact(events: list[Any]) -> dict[str, Any]:
+        final_hash = None
+        for event in events:
+            if event.type == "event_hash_chain_sealed":
+                final_hash = event.payload.get("finalEventHash")
+        return {"status": "present", "finalEventHash": final_hash} if final_hash else {"status": "missing"}
+
+    @staticmethod
+    def _failure_classification_summary(evidence_gate: dict[str, Any]) -> dict[str, int]:
+        summary: dict[str, int] = {}
+        for group in ["missing", "invalid", "tampered", "warnings"]:
+            for item in evidence_gate[group]:
+                failure_class = item["failureClass"]
+                summary[failure_class] = summary.get(failure_class, 0) + 1
+        return summary
 
     def _render_markdown(self, payload: dict[str, Any]) -> str:
         return "\n".join(
