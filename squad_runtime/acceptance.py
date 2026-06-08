@@ -73,6 +73,7 @@ class AcceptanceReporter:
         for gate_name in ["test_gate", "code_review_gate", "reality_checker_gate", "release_gate"]:
             if gate_summary.get(gate_name) != "pass":
                 risks.append(f"{gate_name}_not_pass")
+        self._evaluate_tool_and_provider_risks(run_id, risks)
         pass_count = sum(1 for result in results if result["status"] == "pass")
         pass_rate = pass_count / len(results) if results else 0.0
         conclusion = "PASS" if not risks else "FAIL"
@@ -105,11 +106,41 @@ class AcceptanceReporter:
                 "tool_permission_denied",
                 "checkpoint_mismatch",
                 "dependency_blocked",
+                "illegal_tool_requested",
+                "tool_loop_timeout",
+                "tool_loop_max_rounds_exceeded",
+                "boundary_violation",
+                "command_not_declared",
+                "silent_provider_fallback",
+                "provider_error",
             }:
                 agent_id = event.payload.get("agentId")
                 if agent_id:
                     agent_ids.add(agent_id)
         return agent_ids
+
+    def _evaluate_tool_and_provider_risks(self, run_id: str, risks: list[str]) -> None:
+        """Detect tool loop and provider error events and add corresponding risks."""
+        tool_risk_event_types = {
+            "tool_loop_timeout": "tool_loop_timeout",
+            "tool_loop_max_rounds_exceeded": "tool_loop_max_rounds_exceeded",
+            "illegal_tool_requested": "illegal_tool_requested",
+            "boundary_violation": "boundary_violation",
+            "command_not_declared": "command_not_declared",
+            "silent_provider_fallback": "silent_provider_fallback",
+            "provider_error": "provider_error",
+            "tool_permission_denied": "tool_permission_denied",
+            "provider_blocked": "provider_blocked",
+            "provider_rate_limited": "provider_rate_limited",
+            "agent_timeout": "agent_timeout",
+            "invalid_agent_result": "invalid_agent_result",
+            "checkpoint_mismatch": "checkpoint_mismatch",
+            "dependency_blocked": "dependency_blocked",
+        }
+        for event in self.runtime.events.query(run_id, limit=100000).events:
+            risk_code = tool_risk_event_types.get(event.type)
+            if risk_code and risk_code not in risks:
+                risks.append(risk_code)
 
     def _evaluate_coverage(self, coverage_percent: float | None, risks: list[str]) -> dict[str, Any]:
         if coverage_percent is None:

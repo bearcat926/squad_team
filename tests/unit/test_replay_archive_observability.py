@@ -49,7 +49,8 @@ def test_archive_manifest_contains_replay_observability_metadata(tmp_path: Path)
     assert manifest["runId"] == run.id
     assert manifest["gitCommit"]
     assert manifest["resolvedProfileHash"].startswith("sha256:")
-    assert manifest["finalEventHash"] == "sha256:event"
+    assert manifest["finalEventHash"] is not None
+    assert manifest["finalEventHash"].startswith("sha256-")
     assert manifest["environmentFingerprint"]["timezone"]
     assert "filesystemCaseSensitive" in manifest["environmentFingerprint"]
     assert manifest["providerAudit"]["providers"]["claude_cli"]["identityVerified"] is True

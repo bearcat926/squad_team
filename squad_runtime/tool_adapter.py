@@ -4,7 +4,9 @@ import fnmatch
 import hashlib
 import json
 import subprocess
-from dataclasses import dataclass
+import time
+import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +26,26 @@ class ToolResult:
     stderr: str | None = None
     base_snapshot_id: str | None = None
     result_snapshot_id: str | None = None
+
+
+@dataclass
+class ToolSessionConfig:
+    max_tool_rounds: int = 5
+    tool_call_timeout_seconds: int = 30
+    session_timeout_seconds: int = 180
+
+
+@dataclass
+class ToolSession:
+    session_id: str
+    node_id: str
+    agent_id: str
+    run_id: str
+    started_at: float
+    config: ToolSessionConfig
+    round_count: int = 0
+    status: str = "active"
+    calls: list = field(default_factory=list)
 
 
 class ControlledToolAdapter:
@@ -242,3 +264,195 @@ class ControlledToolAdapter:
     def _is_forbidden_relative(path: str) -> bool:
         forbidden = (".squad/*", ".squad/**", "**/.squad/*", "**/.squad/**", ".squad/token", ".squad/squad.db", ".squad/events.ndjson")
         return any(Path(path).match(pattern) or fnmatch.fnmatch(path, pattern) for pattern in forbidden)
+
+    # ------------------------------------------------------------------
+    # Tool Session lifecycle
+    # ------------------------------------------------------------------
+
+    def start_tool_session(self, node_id: str, config: ToolSessionConfig | None = None) -> ToolSession:
+        """Start a new tool session for a node dispatch."""
+        node = self.runtime.get_node(node_id)
+        config = config or ToolSessionConfig()
+        session = ToolSession(
+            session_id=f"tool-session-{uuid.uuid4().hex[:12]}",
+            node_id=node_id,
+            agent_id=node.owner_agent_id,
+            run_id=node.run_id,
+            started_at=time.time(),
+            config=config,
+        )
+        self.runtime.record_event(
+            node.run_id,
+            "tool_session_started",
+            {
+                "sessionId": session.session_id,
+                "nodeId": node_id,
+                "agentId": node.owner_agent_id,
+                "maxToolRounds": config.max_tool_rounds,
+                "toolCallTimeoutSeconds": config.tool_call_timeout_seconds,
+                "sessionTimeoutSeconds": config.session_timeout_seconds,
+            },
+        )
+        return session
+
+    def call_tool_in_session(self, session: ToolSession, tool_name: str, args: dict[str, Any]) -> ToolResult:
+        """Execute a tool call within a session, enforcing round limits and timeouts."""
+        # Check session timeout
+        elapsed = time.time() - session.started_at
+        if elapsed > session.config.session_timeout_seconds:
+            self._complete_tool_session(session, "timeout", reason="session_timeout", detail=f"Session exceeded {session.config.session_timeout_seconds}s")
+            raise ToolPermissionError("Tool session timed out", "TOOL_LOOP_TIMEOUT")
+
+        # Check round limit
+        if session.round_count >= session.config.max_tool_rounds:
+            self._complete_tool_session(session, "max_rounds_exceeded", detail=f"Exceeded {session.config.max_tool_rounds} rounds")
+            raise ToolPermissionError("Tool loop max rounds exceeded", "TOOL_LOOP_MAX_ROUNDS")
+
+        # Emit tool_call_requested
+        self.runtime.record_event(
+            session.run_id,
+            "tool_call_requested",
+            {
+                "sessionId": session.session_id,
+                "nodeId": session.node_id,
+                "agentId": session.agent_id,
+                "toolName": tool_name,
+                "round": session.round_count + 1,
+                "args": {k: v for k, v in args.items() if k != "content"},  # Redact content for audit
+            },
+            critical=True,
+        )
+
+        # Validate tool is allowed
+        if tool_name in FORBIDDEN_TOOLS:
+            self.runtime.record_event(
+                session.run_id,
+                "tool_call_denied",
+                {
+                    "sessionId": session.session_id,
+                    "nodeId": session.node_id,
+                    "agentId": session.agent_id,
+                    "toolName": tool_name,
+                    "reason": "illegal_tool",
+                    "denialCode": "illegal_tool",
+                },
+                critical=True,
+            )
+            self._complete_tool_session(session, "denied", reason="illegal_tool")
+            raise ToolPermissionError(f"Illegal tool: {tool_name}", "ILLEGAL_TOOL")
+
+        if tool_name not in TOOL_CONFIGS:
+            self.runtime.record_event(
+                session.run_id,
+                "tool_call_denied",
+                {
+                    "sessionId": session.session_id,
+                    "nodeId": session.node_id,
+                    "agentId": session.agent_id,
+                    "toolName": tool_name,
+                    "reason": "unknown_tool",
+                    "denialCode": "illegal_tool",
+                },
+                critical=True,
+            )
+            self._complete_tool_session(session, "denied", reason="unknown_tool")
+            raise ToolPermissionError(f"Unknown tool: {tool_name}", "CONFIG_ERROR")
+
+        # Emit tool_call_allowed
+        self.runtime.record_event(
+            session.run_id,
+            "tool_call_allowed",
+            {
+                "sessionId": session.session_id,
+                "nodeId": session.node_id,
+                "agentId": session.agent_id,
+                "toolName": tool_name,
+                "round": session.round_count + 1,
+            },
+            critical=True,
+        )
+
+        # Execute the tool call
+        try:
+            result = self.call_tool(session.node_id, tool_name, args)
+            session.round_count += 1
+
+            # Emit tool_call_completed
+            self.runtime.record_event(
+                session.run_id,
+                "tool_call_completed",
+                {
+                    "sessionId": session.session_id,
+                    "nodeId": session.node_id,
+                    "agentId": session.agent_id,
+                    "toolName": tool_name,
+                    "round": session.round_count,
+                    "status": "success",
+                },
+                critical=True,
+            )
+            session.calls.append({"toolName": tool_name, "status": "success", "round": session.round_count})
+            return result
+        except ToolPermissionError:
+            # Permission denied already recorded by call_tool
+            session.round_count += 1
+            self.runtime.record_event(
+                session.run_id,
+                "tool_call_completed",
+                {
+                    "sessionId": session.session_id,
+                    "nodeId": session.node_id,
+                    "agentId": session.agent_id,
+                    "toolName": tool_name,
+                    "round": session.round_count,
+                    "status": "denied",
+                },
+                critical=True,
+            )
+            session.calls.append({"toolName": tool_name, "status": "denied", "round": session.round_count})
+            raise
+        except Exception as exc:
+            session.round_count += 1
+            self.runtime.record_event(
+                session.run_id,
+                "tool_call_completed",
+                {
+                    "sessionId": session.session_id,
+                    "nodeId": session.node_id,
+                    "agentId": session.agent_id,
+                    "toolName": tool_name,
+                    "round": session.round_count,
+                    "status": "error",
+                    "error": str(exc),
+                },
+                critical=True,
+            )
+            session.calls.append({"toolName": tool_name, "status": "error", "round": session.round_count})
+            raise
+
+    def complete_tool_session(self, session: ToolSession, outcome: str = "success") -> None:
+        """Explicitly complete a tool session."""
+        self._complete_tool_session(session, outcome)
+
+    def _complete_tool_session(self, session: ToolSession, status: str, reason: str | None = None, detail: str | None = None) -> None:
+        """Internal: emit tool_session_completed event."""
+        if session.status != "active":
+            return  # Already completed
+        session.status = status
+        elapsed_ms = int((time.time() - session.started_at) * 1000)
+        self.runtime.record_event(
+            session.run_id,
+            "tool_session_completed",
+            {
+                "sessionId": session.session_id,
+                "nodeId": session.node_id,
+                "agentId": session.agent_id,
+                "status": status,
+                "reason": reason,
+                "detail": detail,
+                "roundCount": session.round_count,
+                "elapsedMs": elapsed_ms,
+                "calls": session.calls,
+            },
+            critical=True,
+        )

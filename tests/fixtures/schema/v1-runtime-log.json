@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "1.0",
+  "run": {
+    "runId": "run-v1-test",
+    "task": "Test v1 runtime log",
+    "status": "completed",
+    "createdAt": "2026-05-01T00:00:00Z"
+  },
+  "nodes": [
+    {
+      "nodeId": "node-1",
+      "ownerAgentId": "squad-lead",
+      "status": "pass",
+      "task": "Lead planning"
+    }
+  ],
+  "events": [
+    {
+      "id": "evt-1",
+      "runId": "run-v1-test",
+      "sequenceNumber": 1,
+      "type": "run_started",
+      "payload": {"runId": "run-v1-test"},
+      "critical": true,
+      "createdAt": "2026-05-01T00:00:01Z"
+    }
+  ],
+  "agentResults": [],
+  "gates": []
+}

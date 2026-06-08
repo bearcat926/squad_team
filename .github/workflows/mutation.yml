@@ -1,6 +1,10 @@
 name: Mutation Testing
 
 on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: '0 6 * * 1'  # Every Monday UTC 06:00
@@ -23,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev]" || pip install -r requirements.txt
 
       - name: Run mutation tests (core modules)
         run: |
@@ -34,12 +38,20 @@ jobs:
             "squad_runtime/services/" \
             "squad_runtime/repositories/" \
             "squad_runtime/providers/" \
-            "squad_runtime/event_store.py"
-          mutmut results
+            "squad_runtime/event_store.py" || true
+          mutmut results > artifacts/mutation/mutmut-results.txt || true
+          python scripts/parse_mutation_score.py
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: artifacts/mutation/
 
       - name: Output summary
         run: |
           echo "## Mutation Testing Results" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          mutmut results >> $GITHUB_STEP_SUMMARY
+          cat artifacts/mutation/mutation-summary.json >> $GITHUB_STEP_SUMMARY || true
           echo '```' >> $GITHUB_STEP_SUMMARY

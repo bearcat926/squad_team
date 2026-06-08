@@ -233,9 +233,9 @@ class Runtime:
 
     # --- Events and Artifacts ---
 
-    def record_event(self, run_id: str, event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def record_event(self, run_id: str, event_type: str, payload: dict[str, Any], critical: bool = False) -> dict[str, Any]:
         self._validate_typed_event(event_type, payload)
-        event = self.events.append(run_id, event_type, payload, critical=True)
+        event = self.events.append(run_id, event_type, payload, critical=critical)
         return {
             "id": event.id,
             "runId": event.run_id,

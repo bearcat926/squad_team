@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "2.0",
+  "migrationReport": {
+    "schemaVersion": "1.0",
+    "sourceSchemaVersion": "1.0",
+    "targetSchemaVersion": "2.0",
+    "sourceCanonicalizationSpecVersion": "unavailable-in-v1",
+    "targetCanonicalizationSpecVersion": "1.0",
+    "eventHashChain": "unavailable-in-v1",
+    "tamperDetection": "not-available-for-historical-events",
+    "allowedModes": ["re-evaluation", "state-reconstruction-with-warning"],
+    "disallowedModes": ["tamper-proof replay"],
+    "warnings": [
+      {
+        "code": "EVENT_HASH_CHAIN_UNAVAILABLE_IN_V1",
+        "message": "Historical archive does not contain previousEventHash/eventPayloadHash/eventHash. Hash chain must not be fabricated."
+      }
+    ]
+  },
+  "run": {
+    "runId": "run-v1-test",
+    "task": "Test v1 runtime log",
+    "status": "completed",
+    "createdAt": "2026-05-01T00:00:00Z"
+  },
+  "nodes": [
+    {
+      "nodeId": "node-1",
+      "ownerAgentId": "squad-lead",
+      "status": "pass",
+      "task": "Lead planning"
+    }
+  ],
+  "events": [
+    {
+      "id": "evt-1",
+      "runId": "run-v1-test",
+      "sequenceNumber": 1,
+      "type": "run_started",
+      "payload": {"runId": "run-v1-test"},
+      "critical": true,
+      "createdAt": "2026-05-01T00:00:01Z"
+    }
+  ],
+  "agentResults": [],
+  "gates": []
+}

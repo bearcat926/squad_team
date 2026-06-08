@@ -1,4 +1,46 @@
-# Runbook
+# Squad Runtime Runbook
+
+## Quick Reference
+
+### Lead-Only Planning (CLI)
+
+```bash
+squad run "task description"
+```
+
+- Creates a single squad-lead planning node
+- Suitable for task planning, decision capture, lead-only workflows
+- Does **NOT** dispatch all 10 agents
+- Default provider is `fake_cli`; override with `--provider`
+
+### Full-Team Smoke (Script)
+
+```bash
+python scripts/smoke_dispatch.py --provider fake_cli --rounds 2
+```
+
+- Creates all 10 agent nodes
+- Dispatches each agent through the provider
+- Used for comprehensive runtime validation
+- Requires `SQUAD_RUNTIME_HOME` and `PYTHONPATH` setup
+
+### Scene F Real Provider
+
+```bash
+python scripts/smoke_dispatch.py --provider claude_cli --scenario scene-F
+```
+
+- Uses real LLM provider (claude CLI)
+- Requires `claude` CLI to be installed and authenticated
+- Falls back to `environment_blocked` if unavailable
+
+## Environment Setup
+
+| Variable | Purpose |
+|----------|---------|
+| `SQUAD_RUNTIME_HOME` | Path to squad-runtime source |
+| `PYTHONPATH` | Must include `SQUAD_RUNTIME_HOME` |
+| `SQUAD_ACCEPTANCE_ROOT` | Override project root for acceptance runs |
 
 ## Starting the Server
 
@@ -14,7 +56,7 @@ Server runs at `http://127.0.0.1:8765`. Web UI at `/`.
 
 ```bash
 squad init                          # Initialize .squad directory
-squad run "Ship the MVP"           # Create a new run
+squad run "Ship the MVP"           # Create a new run (lead-only planning node)
 squad status                        # List all runs
 ```
 
@@ -74,7 +116,7 @@ docker compose down -v
 
 The container runs as non-root user `appuser`. The `.squad` directory is stored in a named Docker volume `squad-data`.
 
-### Notes
+### Docker Notes
 
 - Port 8765 is bound to `127.0.0.1` only (not exposed to external networks).
 - The healthcheck uses Python `urllib` because the `python:3.11-slim` base image does not include `curl`.
@@ -84,8 +126,9 @@ The container runs as non-root user `appuser`. The `.squad` directory is stored 
 
 | Problem | Cause | Fix |
 |---------|-------|-----|
+| `provider_blocked` | claude CLI not found or not authenticated | Run `squad agents doctor` |
+| `environment_blocked` | Required tools not available in CI | Verify environment setup |
 | 401 on API calls | Missing/invalid token | Check `squad token show` |
 | `database is locked` | Multiple processes | Ensure single Runtime instance |
-| `provider_blocked` event | CLI not found | Run `squad agents doctor` |
 | Coverage below baseline | Test regression | Run `pytest --cov` to find gaps |
 | Node stuck in `BLOCKED` | Upstream failure | Check `squad eval-gates` |

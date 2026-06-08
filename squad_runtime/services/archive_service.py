@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from ..canonicalization import CANONICALIZATION_SPEC_VERSION
 from ..event_store import EventStore
 from ..models import TaskNode
 from ..profile_registry import EvidenceScenarioType, ResolvedProfileLoader
@@ -143,10 +144,17 @@ class ArchiveService:
     def _build_archive_manifest(self, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         events = payload["events"]
         profile = ResolvedProfileLoader.default().freeze(EvidenceScenarioType.REAL_ACCEPTANCE)
+
+        # Compute finalEventHash from actual chain via EventStore, falling back to scanning
+        final_event_hash = self._compute_final_event_hash(run_id, events)
+
         return {
             "schemaVersion": "archive-manifest/v1",
             "runId": run_id,
             "gitCommit": self._git_commit(),
+            "canonicalizationSpecVersion": CANONICALIZATION_SPEC_VERSION,
+            "eventHashAlgorithm": "sha256",
+            "finalEventHash": final_event_hash,
             "providerIdentity": self._provider_identity(payload["agentResults"]),
             "testSummary": {
                 "agentResultCount": len(payload["agentResults"]),
@@ -156,7 +164,6 @@ class ArchiveService:
             "frozenResolvedProfile": profile.to_dict(),
             "resolvedProfileHash": profile.resolved_profile_hash,
             "sourceProfiles": list(profile.source_profiles),
-            "finalEventHash": self._last_event_payload(events, "event_hash_chain_sealed", "finalEventHash"),
             "environmentFingerprint": self._environment_fingerprint(),
             "providerAudit": self._provider_audit(payload["agentResults"]),
             "chainGraph": {
@@ -177,6 +184,18 @@ class ArchiveService:
             "environmentCompatibilityReport": {"status": "not_evaluated"},
             "schemaMigrationReport": SchemaMigrationEngine().validate_or_migrate(payload),
         }
+
+    def _compute_final_event_hash(self, run_id: str, events: list[dict[str, Any]]) -> str | None:
+        """Compute the final event hash from the EventStore chain.
+
+        Falls back to scanning for event_hash_chain_sealed if the store
+        does not have hash data (v1 legacy archives).
+        """
+        chain_info = self._events.get_chain_info(run_id)
+        if chain_info.get("eventCount", 0) > 0 and chain_info.get("finalEventHash"):
+            return chain_info["finalEventHash"]
+        # Fallback: scan for externally-emitted sealed event
+        return self._last_event_payload(events, "event_hash_chain_sealed", "finalEventHash")
 
     @staticmethod
     def _provider_identity(agent_results: list[dict[str, Any]]) -> dict[str, Any]:
@@ -277,6 +296,8 @@ class ArchiveService:
                 "",
                 f"Run ID: `{manifest['runId']}`",
                 f"Schema: `{manifest['schemaVersion']}`",
+                f"Canonicalization Spec: `{manifest.get('canonicalizationSpecVersion', 'unavailable')}`",
+                f"Event Hash Algorithm: `{manifest.get('eventHashAlgorithm', 'unavailable')}`",
                 f"Resolved Profile: `{manifest['resolvedProfileHash']}`",
                 f"Final Event Hash: `{manifest['finalEventHash']}`",
                 "",

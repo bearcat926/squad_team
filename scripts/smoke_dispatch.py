@@ -262,6 +262,13 @@ if __name__ == "__main__":
             "checkpoint_mismatch": "checkpoint_mismatch",
             "tool_permission_denied": "tool_permission_denied",
             "dependency_blocked": "dependency_blocked",
+            "illegal_tool_requested": "illegal_tool_requested",
+            "tool_loop_timeout": "tool_loop_timeout",
+            "tool_loop_max_rounds_exceeded": "tool_loop_max_rounds_exceeded",
+            "boundary_violation": "boundary_violation",
+            "command_not_declared": "command_not_declared",
+            "silent_provider_fallback": "silent_provider_fallback",
+            "provider_error": "provider_error",
         }
         for event_type in event_types:
             if event_type in type_risk_map:

@@ -68,6 +68,11 @@ def init() -> None:
 
 @app.command(name="run")
 def run_command(goal: str) -> None:
+    """Create a new squad run with lead-only planning node.
+
+    Note: This creates a single squad-lead planning session.
+    For full-team 10-agent smoke tests, use scripts/smoke_dispatch.py directly.
+    """
     initialize_project(_squad_dir())
     rt = _runtime()
     run = rt.create_run(goal)

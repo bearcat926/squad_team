@@ -166,6 +166,7 @@ class LocalCliProvider:
                 },
                 critical=True,
             )
+            self._ensure_session_completed(runtime, node, dispatch_id, profile, "provider_blocked")
             return None
         provider_identity_verified = self.identity_verified or health.identity_verified
         wait = self.rate_limiter.wait_before_dispatch(self.name)
@@ -199,6 +200,7 @@ class LocalCliProvider:
             runtime.events.append(
                 node.run_id, "agent_timeout", {"nodeId": node.id, "agentId": profile.agent_id, "dispatchId": dispatch_id, "provider": self.name}, critical=True
             )
+            self._ensure_session_completed(runtime, node, dispatch_id, profile, "provider_timeout")
             return None
         workspace.write_stdout(completed.stdout or "")
         workspace.write_stderr(completed.stderr or "")
@@ -219,6 +221,7 @@ class LocalCliProvider:
                 }
                 runtime.events.append(node.run_id, "provider_rate_limited", rate_limit_payload, critical=True)
                 runtime.events.append(node.run_id, "provider_blocked", {**rate_limit_payload, "detail": "provider rate limited"}, critical=True)
+                self._ensure_session_completed(runtime, node, dispatch_id, profile, "provider_rate_limited")
                 return None
             self._block_node(runtime, node, "invalid_agent_result", {"exitCode": completed.returncode})
             runtime.events.append(
@@ -227,6 +230,7 @@ class LocalCliProvider:
                 {"nodeId": node.id, "agentId": profile.agent_id, "dispatchId": dispatch_id, "exitCode": completed.returncode},
                 critical=True,
             )
+            self._ensure_session_completed(runtime, node, dispatch_id, profile, "invalid_agent_result")
             return None
         payload = self._result_parser.read_result_payload(workspace.final_result_path, completed.stdout or "")
         if payload is None:
@@ -237,6 +241,7 @@ class LocalCliProvider:
                 {"nodeId": node.id, "agentId": profile.agent_id, "dispatchId": dispatch_id, "reason": "invalid_output"},
                 critical=True,
             )
+            self._ensure_session_completed(runtime, node, dispatch_id, profile, "invalid_agent_result")
             return None
         try:
             result = AgentResult(**payload)
@@ -248,6 +253,7 @@ class LocalCliProvider:
                 {"nodeId": node.id, "agentId": profile.agent_id, "dispatchId": dispatch_id, "reason": str(exc)},
                 critical=True,
             )
+            self._ensure_session_completed(runtime, node, dispatch_id, profile, "invalid_agent_result")
             return None
         if result.taskNodeId != node.id or result.agentId != profile.agent_id:
             self._block_node(runtime, node, "invalid_agent_result", {"reason": "metadata_mismatch"})
@@ -257,6 +263,7 @@ class LocalCliProvider:
                 {"nodeId": node.id, "agentId": profile.agent_id, "dispatchId": dispatch_id, "reason": "metadata_mismatch"},
                 critical=True,
             )
+            self._ensure_session_completed(runtime, node, dispatch_id, profile, "invalid_agent_result")
             return None
         if result.workedAgainstCheckpoint != node.checkpoint_id:
             self._block_node(runtime, node, "checkpoint_mismatch", {"expected": node.checkpoint_id, "actual": result.workedAgainstCheckpoint})
@@ -272,6 +279,7 @@ class LocalCliProvider:
                 },
                 critical=True,
             )
+            self._ensure_session_completed(runtime, node, dispatch_id, profile, "checkpoint_mismatch")
             return None
         validation = validate_agent_result(result, runtime.squad_dir / "artifacts", node.checkpoint_id)
         if not validation.valid:
@@ -282,6 +290,7 @@ class LocalCliProvider:
                 {"nodeId": node.id, "agentId": profile.agent_id, "dispatchId": dispatch_id, "errors": validation.errors},
                 critical=True,
             )
+            self._ensure_session_completed(runtime, node, dispatch_id, profile, "invalid_agent_result")
             return None
         runtime.persist_agent_result(
             result,
@@ -310,6 +319,15 @@ class LocalCliProvider:
         current = runtime.get_node(node.id)
         if current.status == NodeStatus.RUNNING:
             runtime.transition_node(node.id, NodeStatus.RUNNING, NodeStatus.AGENT_UNAVAILABLE, reason)
+
+    def _ensure_session_completed(self, runtime: Runtime, node, dispatch_id: str, profile: AgentProfile, outcome: str) -> None:
+        """Guarantee llm_session_completed is always emitted after llm_session_started."""
+        runtime.events.append(
+            node.run_id,
+            "llm_session_completed",
+            {"dispatchId": dispatch_id, "agentId": profile.agent_id, "provider": self.name, "outcome": outcome},
+            critical=True,
+        )
 
     def rate_limit_retry_limit(self) -> int:
         return self.rate_limiter.retry_limit(self.name)
