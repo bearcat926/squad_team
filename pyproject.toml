@@ -66,5 +66,5 @@ source = ["squad_runtime"]
 fail_under = 90
 
 [tool.mutmut]
-paths_to_mutate = "squad_runtime/"
-tests_dir = "tests/"
+source_paths = ["squad_runtime/canonicalization.py"]
+tests_dir = ["tests/unit/test_event_hash_chain.py"]

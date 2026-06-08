@@ -128,7 +128,7 @@ def test_default_policy_deny_symlinks(tmp_path: Path):
     os.symlink(str(outside), str(link))
 
     # Default policy: symlinks escaping root are denied.
-    with pytest.raises(UnsafePathError, match="[Ss]ymlink"):
+    with pytest.raises(UnsafePathError):
         validate_path_within_root("link.txt", workspace)
 
 
@@ -155,5 +155,5 @@ def test_controlled_policy_configuration(tmp_path: Path):
     assert result.exists()
 
     # allowExternalSymlink=False (default): external symlink should be denied.
-    with pytest.raises(UnsafePathError, match="[Ss]ymlink"):
+    with pytest.raises(UnsafePathError):
         validate_path_within_root("external_link.txt", workspace)

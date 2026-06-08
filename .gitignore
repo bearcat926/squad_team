@@ -26,3 +26,4 @@ Thumbs.db
 
 # Independent acceptance report
 docs/report/acceptance-report-independent.md
+mutants/
