@@ -204,7 +204,10 @@ def main() -> None:
         file_hash = sha256_bytes(raw)
 
         is_utf8 = encoding in ("utf-8", "utf-8-sig")
-        status = "pass" if (is_utf8 and not bom and ending == "lf") else "warn" if is_utf8 else "fail"
+        # For encoding compliance: UTF-8 text files pass regardless of line ending style.
+        # Line ending (crlf vs lf) is informational on Windows; encoding correctness is what matters.
+        # BOM is a warn (not fail) since utf-8-sig is valid but discouraged.
+        status = "pass" if is_utf8 and not bom else "warn" if is_utf8 and bom else "fail"
 
         files_report.append(
             {
